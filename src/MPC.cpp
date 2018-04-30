@@ -21,7 +21,7 @@ double dt = 0.1;
 // This is the length from front to CoG that has a similar radius.
 const double Lf = 2.67;
 
-const double ref_v = 40.0;
+const double ref_v = 80.0;
 
 // Start indexes for all state and actuator types in the common state and actuator vector.
 const size_t x_start = 0;
@@ -48,9 +48,9 @@ class FG_eval {
     // Minimize wrong state errors.
     for (size_t t = 0; t < N; t++) {
       // Minimize path keeping error.
-      fg[0] += 100 * CppAD::pow(vars[cte_start + t], 2);
+      fg[0] += 10 * CppAD::pow(vars[cte_start + t], 2);
       // Minimize car angle error.
-      fg[0] += 100 * CppAD::pow(vars[epsi_start + t], 2);
+      fg[0] += 500 * CppAD::pow(vars[epsi_start + t], 2);
       // Minimize car velocity error
       fg[0] += CppAD::pow(vars[v_start + t] - ref_v, 2);
     }
@@ -58,9 +58,9 @@ class FG_eval {
     // Minimize the use of actuators.
     for (size_t t = 0; t < N - 1; t++) {
       // Minimize steering at an angle.
-      fg[0] += 10 * CppAD::pow(vars[delta_start + t], 2);
+      fg[0] += 50 * CppAD::pow(vars[delta_start + t], 2);
       // Minimize acceleration.
-      fg[0] += 10 * CppAD::pow(vars[a_start + t], 2);
+      fg[0] += 280 * CppAD::pow(vars[a_start + t], 2);
     }
 
     // Minimize the value gap between sequential actuations.
@@ -68,7 +68,7 @@ class FG_eval {
       // Stop wheel jerking by minimizing difference between steering actuations.
       fg[0] += 10000 * CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
       // Prevent stop and go acceleration by minimizing difference between accelartion actuation.
-      fg[0] += 100 * CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
+      fg[0] += 10 * CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
     }
 
     // Initial constraints

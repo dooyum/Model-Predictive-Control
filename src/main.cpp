@@ -91,16 +91,16 @@ int main() {
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
-          double acc = j[1]["throttle"];
           double delta = j[1]["steering_angle"];
 
-          // Factor in a 100ms latency delay in actuation.
+          // Factor in latency for delay in actuation.
           double latency = 0.1; // 100ms.
           double Lf = 2.67;
+          v *= 0.447; // convert from mph to m/s.
           // px, py, psi and v 100ms into the future.
           px += v * cos(psi) * latency;
           py += v * sin(psi) * latency;
-          psi = psi - (v * delta * latency) * Lf;
+          psi = psi + (v * delta * latency) / Lf;
 
           vector<double> vehicle_ptsx = {};
           vector<double> vehicle_ptsy = {};
@@ -108,7 +108,6 @@ int main() {
             // Get the difference in x and y values of waypoints to global position of vehicle.
             double x_diff = ptsx[i] - px;
             double y_diff = ptsy[i] - py;
-
             double theta = 0 - psi; // Rotate perspective clockwise.
 
             // Transform to vehicle coordinates
@@ -123,16 +122,19 @@ int main() {
 
           // Gets coefficients that fit all x and y values to a 3rd degree polynomial.
           auto coeffs = polyfit(ptsx_eigen, ptsy_eigen, 3);
-          // No need to subrtact vehicle observed y from derived y because, y should be 0 w.r.t. vehicle.
-          double cte = polyeval(coeffs, 0);
           // Psi is always 0 w.r.t. the vehicle coordniates.
           // x is 0 w.r.t the vehicle coordinates, so all derivate values of the polynomial with an x can be removed.
           // i.e. C2 * x + C3 * x^2 = 0
+          // epsi and epsi after latency are equal w.r.t the vehicle coordinates.
           double epsi = -atan(coeffs[1]);
+          // No need to subrtact vehicle observed y from derived y because, y should be 0 w.r.t. vehicle.
+          double cte = polyeval(coeffs, 0);
+          double latency_cte = cte + v * sin(epsi) * latency;
+          double latency_x = v * latency;
 
           Eigen::VectorXd state(6);
           // The vehicle state w.r.t the vehicle is positioned at [x,y] = [0,0] at a 0 degree angle.
-          state << 0, 0, 0, v, cte, epsi;
+          state << latency_x, 0, 0, v, latency_cte, epsi;
           auto vars = mpc.Solve(state, coeffs);
           double steer_value = vars[0];
           double throttle_value = vars[1];
@@ -142,7 +144,7 @@ int main() {
           msgJson["steering_angle"] = steer_value / deg2rad(25);
           msgJson["throttle"] = throttle_value;
 
-          //Display the MPC predicted trajectory 
+          // Display the MPC predicted trajectory
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
 
@@ -157,7 +159,7 @@ int main() {
           msgJson["mpc_x"] = mpc_x_vals;
           msgJson["mpc_y"] = mpc_y_vals;
 
-          //Display the waypoints/reference line
+          // Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
