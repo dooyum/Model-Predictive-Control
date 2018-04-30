@@ -54,6 +54,6 @@ This is how we derive various aspects of the future state **state_t1**:
 * **x_t1 = x_t + velocity_t * cos(psi_t) * latency**
 * **y_t1 = y_t + velocity_t * sin(psi_t) * latency**
 * **psi_t1 = psi_t + (delta * velocity_t * latency) / Lf**
-* **v_t1**: = v_t * acceleration**
+* **v_t1: = v_t * acceleration**
 
 With the future state, we compute our **CTE** and **ePSI** and apply the actuators computed for **state_t1** at time **t**.
