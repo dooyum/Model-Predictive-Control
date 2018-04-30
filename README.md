@@ -1,108 +1,59 @@
-# CarND-Controls-MPC
+# Vehicle Controls using MPC Project
 Self-Driving Car Engineer Nanodegree Program
 
 ---
 
-## Dependencies
+## MPC Model
 
-* cmake >= 3.5
- * All OSes: [click here for installation instructions](https://cmake.org/install/)
-* make >= 4.1(mac, linux), 3.81(Windows)
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
-* gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools]((https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
-* [uWebSockets](https://github.com/uWebSockets/uWebSockets)
-  * Run either `install-mac.sh` or `install-ubuntu.sh`.
-  * If you install from source, checkout to commit `e94b6e1`, i.e.
-    ```
-    git clone https://github.com/uWebSockets/uWebSockets
-    cd uWebSockets
-    git checkout e94b6e1
-    ```
-    Some function signatures have changed in v0.14.x. See [this PR](https://github.com/udacity/CarND-MPC-Project/pull/3) for more details.
+An MPC model was used to control a vehicle around a simulated track with provided waypoints. The ideal state was for the vehicle to remain within the lane while gradually speeding up with confidence.
+MPC optimizes the state of the vehicle to minimize any deviation from the waypoints.
+The state of the vehicle is characterized by:
+* Global polar coordinates: (x, y and psi)
+* Vehicle velocity
+* Acceleration
+* Actuators: (throttle, steering angle)
 
-* **Ipopt and CppAD:** Please refer to [this document](https://github.com/udacity/CarND-MPC-Project/blob/master/install_Ipopt_CppAD.md) for installation instructions.
-* [Eigen](http://eigen.tuxfamily.org/index.php?title=Main_Page). This is already part of the repo so you shouldn't have to worry about it.
-* Simulator. You can download these from the [releases tab](https://github.com/udacity/self-driving-car-sim/releases).
-* Not a dependency but read the [DATA.md](./DATA.md) for a description of the data sent back from the simulator.
+Every deviation from the ideal state is considered an error. The errors that were taken into consideration were:
+* Cross track error (**CTE**): This is the y coordinate deviation from the ideal path.
+* Psi Error (**ePSI**): This is the deviation from the angle of the ideal path.
 
+Using the MPC model has the following steps:
+1. Transform provided waypoints from global coordinates to vehicle coordinates.
+2. Fit a 3rd degree polynomial to the vehicle coordinate waypoints and retrieve the fit coefficients. i.e. **C0 + C1(x) + C2(x^2) + C3(x^3)**
+3. Evaluate the current state with respect to the derived polynomial and calculating the CTE and ePSI.
+4. Based on the computed errors, update the actuators of the vehicle to minimize the errors and bring the vehicle to a more ideal state. Weights are used to indicate the importance of minimizing each type of error.
 
-## Basic Build Instructions
+## Timestep Length and Elapsed Duration
+The timestep length(**N**) and elapsed duration(**dt**) are parameters used to tune the performance of the MPC model. **N** denotes the number of timesteps into the future the vehicle should consider. **dt** denotes the duration between each timestep.
+The chosen parameter values significantly affect the performance of the MPC model.
+* A high **N** mght consider upcoming waypoints that are too far ahead to affect our current state.
+* A low **N** doesn't look far enough at the upcoming waypoints. The model is likely to be surprised at sudden changes in the path, like bends or lane switches.
+* A high **dt** might result in infrequent evaluation of upcoming states.
+* A low **dt** might result in higher precision but ultimately wasted computation of future states. This is as a result of the fact that the state from one timestep to another is not likely to be markedly different in this situation.
 
-1. Clone this repo.
-2. Make a build directory: `mkdir build && cd build`
-3. Compile: `cmake .. && make`
-4. Run it: `./mpc`.
+I tried setting **N** to 100, but the model considered points that were too far ahead of our vehicle state, affecting the derived polynomial as a result.
+The sweet spot was an **N** value of 10. Based on the **dt** selected, this was equivalent to evaluating waypoints 1 second ahead.
 
-## Tips
+I ran the simulation on a laptop with relatively weak specs. AS a result, I chose a **dt** that enable smooth optimization but did not take up all the computing resources.
+A **dt** of 0.1(100ms) was ideal.
 
-1. It's recommended to test the MPC on basic examples to see if your implementation behaves as desired. One possible example
-is the vehicle starting offset of a straight line (reference). If the MPC implementation is correct, after some number of timesteps
-(not too many) it should find and track the reference line.
-2. The `lake_track_waypoints.csv` file has the waypoints of the lake track. You could use this to fit polynomials and points and see of how well your model tracks curve. NOTE: This file might be not completely in sync with the simulator so your solution should NOT depend on it.
-3. For visualization this C++ [matplotlib wrapper](https://github.com/lava/matplotlib-cpp) could be helpful.)
-4.  Tips for setting up your environment are available [here](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/23d376c7-0195-4276-bdf0-e02f1f3c665d)
-5. **VM Latency:** Some students have reported differences in behavior using VM's ostensibly a result of latency.  Please let us know if issues arise as a result of a VM environment.
+## Handling Latency
+In a real world scenario, although these computations happen relatively qiuckly with powerful on-board computers, there is always some latency between when the MPC model issues new actuation values and when the physical actuators like the steering, brake and gas pedal are engaged.
+As a result of this latency, the vehicle state might have significantly changed from the state at the time the actuator values were dispatched.
+To handle such a possibility, when new measurements are recieved for the vehicles current state **state_t**, we project where the vehicle will be in the immediate future (**state_t1**). This projection assumes that the actutor values remain constant.
+The state values measured are:
+* **x_t**: The current **x** global coordinate of the vehicle
+* **y_t**: The current **y** global coordinate of the vehicle
+* **psi_t**: The current vehicle orientation in radians
+* **velocity_t**: The current velocity of the vehicle
+* **acceleration**: The current actuator value responsible for acceleration of the vehicle
+* **delta**: The current actuator value responsible for altering the orientation of the vehicle
+* **Lf**: Constant that reflects the length of the vehicle relative to it's center of gravity.
 
-## Editor Settings
+This is how we derive various aspects of the future state **state_t1**:
+* **x_t1 = x_t + velocity_t * cos(psi_t) * latency**
+* **y_t1 = y_t + velocity_t * sin(psi_t) * latency**
+* **psi_t1 = psi_t + (delta * velocity_t * latency) / Lf**
+* **v_t1**: = v_t * acceleration**
 
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
-
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
-
-## Code Style
-
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
-
-## Project Instructions and Rubric
-
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
-
-More information is only accessible by people who are already enrolled in Term 2
-of CarND. If you are enrolled, see [the project page](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/f1820894-8322-4bb3-81aa-b26b3c6dcbaf/lessons/b1ff3be0-c904-438e-aad3-2b5379f0e0c3/concepts/1a2255a0-e23c-44cf-8d41-39b8a3c8264a)
-for instructions and the project rubric.
-
-## Hints!
-
-* You don't have to follow this directory structure, but if you do, your work
-  will span all of the .cpp files here. Keep an eye out for TODOs.
-
-## Call for IDE Profiles Pull Requests
-
-Help your fellow students!
-
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to we ensure
-that students don't feel pressured to use one IDE or another.
-
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
-
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
-
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
-
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
-
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
-
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
+With the future state, we compute our **CTE** and **ePSI** and apply the actuators computed for **state_t1** at time **t**.
